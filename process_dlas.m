@@ -12,7 +12,14 @@ test_x = train_x;
 fault_shape = linspace(-1, 1).^2 - 1;
 
 likelihood = @likLaplace;
-mean_function = {@meanSum, {@meanConst, {@meanScale, {@meanDrift, fault_shape}}}};
+mean_function = ...
+    {@meanSum, { ...
+        @meanConst, ...
+        {@meanScale, ...
+            {@meanDrift, fault_shape} ...
+        }
+               }
+    };
 covariance_function = ...
     {@covSum, { ...
         {@covMaterniso, 3}, ...
@@ -85,11 +92,9 @@ hyperparameters.cov = nan(6, 1);
                          mean_function, covariance_function, likelihood, ...
                          data, responses);
 
-best_means = zeros(num_points, num_points);
-best_variances = zeros(num_points, num_points);
-best_log_likelihoods = zeros(num_points, 1);
-start_times = zeros(num_points, 1);
-widths = zeros(num_points, 1);
+all_means = zeros(num_points, num_points, num_points);
+all_variances = zeros(num_points, num_points, num_points);
+all_log_likelihoods = zeros(num_points, 1, num_points);
 
 for fault_start_ind = 316:num_points
 
@@ -113,13 +118,9 @@ for fault_start_ind = 316:num_points
         feval(b_function{:}, hypersamples.values(i, 2:4), test_x)';
   end
 
-  [~, best_hypersample] = max(hypersample_weights);
-
-  best_means(ind, :) = latent_means(best_hypersample, :);
-  best_variances(ind, :) = latent_variances(best_hypersample, :);
-  best_log_likelihoods(ind) = log_likelihoods(best_hypersample);
-  start_times(ind) = hypersamples.values(best_hypersample, 3);
-  widths(ind) = exp(hypersamples.values(best_hypersample, 4));
+  all_means(:, :, ind) = latent_means;
+  all_variances(:, :, ind) = latent_variances;
+  all_log_likelihoods(:, :, ind) = log_likelihoods;
 
   fault_start_ind
 end
