@@ -92,13 +92,13 @@ hyperparameters.cov = nan(6, 1);
                          mean_function, covariance_function, likelihood, ...
                          data, responses);
 
-all_means = zeros(num_points, num_points, num_points);
-all_variances = zeros(num_points, num_points, num_points);
-all_log_likelihoods = zeros(num_points, 1, num_points);
+all_means = zeros(num_hypersamples, num_points, num_points);
+all_variances = zeros(num_hypersamples, num_points, num_points);
+all_log_likelihoods = zeros(num_hypersamples, num_points);
 
-for fault_start_ind = 316:num_points
-
-  fault_start_times = wavelengths(fault_start_ind) * ones(num_hypersamples, 1);
+for ind = 1:1
+  tic;
+  fault_start_times = wavelengths(ind) * ones(num_hypersamples, 1);
 
   hypersamples.values = ...
       [values(:, 1:2) ...
@@ -120,7 +120,8 @@ for fault_start_ind = 316:num_points
 
   all_means(:, :, ind) = latent_means;
   all_variances(:, :, ind) = latent_variances;
-  all_log_likelihoods(:, :, ind) = log_likelihoods;
+  all_log_likelihoods(:, ind) = log_likelihoods;
 
-  fault_start_ind
+  elapsed = toc;
+  fprintf('%i done, took %fs.\n', ind, elapsed);
 end
