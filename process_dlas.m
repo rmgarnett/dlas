@@ -4,7 +4,7 @@ load([data_directory 'quasars.mat']);
 train_x = wavelengths(:);
 [num_points, d] = size(train_x);
 
-train_y = data(end - 1, :);
+train_y = data(end, :);
 train_y = train_y(:);
 train_y = train_y - min(train_y);
 train_y = train_y / max(train_y);
@@ -95,11 +95,6 @@ all_latent_means = zeros(num_hypersamples, num_points, num_start_times);
 all_latent_variances = zeros(num_hypersamples, num_points, num_start_times);
 all_log_likelihoods = zeros(num_hypersamples, num_start_times);
 
-objective = @(x, start_time) gp_likelihood(rewrap(hyperparameters, ...
-        [x(5:6); start_time; x([3 7:8 4 1:2]); start_time; x(3)]), ...
-        inference_method, mean_function, covariance_function, ...
-        likelihood, train_x, train_y);
-        
 for i = 1:num_start_times
   hypersamples.values = ...
       [ccd_hypersamples(:, 1:2) ...
@@ -122,5 +117,5 @@ for i = 1:num_start_times
   all_log_likelihoods(:, i)     = log_likelihoods;
   
   fprintf('time %4.2f: likelihood: %4.2f\n', fault_start_times(i), ...
-          mean(log_likelihoods));
+          max(log_likelihoods));
 end
