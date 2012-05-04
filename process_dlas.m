@@ -1,121 +1,89 @@
-data_directory = '~/work/data/astronomy/quasars/processed/';
-load([data_directory 'quasars.mat']);
+setup_dlas_common;
 
-train_x = wavelengths(:);
-[num_points, d] = size(train_x);
+[wavelengths, flux, noise_variance, redshift] = ...
+    read_fits_data(filename(plate, mjd, fiber));
 
-train_y = data(end, :);
-train_y = train_y(:);
-train_y = train_y - min(train_y);
-train_y = train_y / max(train_y);
+num_points = numel(wavelengths);
 
-test_x = train_x;
+train_x = wavelengths;
+train_y = flux;
 
-fault_shape = linspace(-1, 1).^2 - 1;
+skip = 5;
+train_x = train_x(1:skip:end);
+train_y = train_y(1:skip:end);
+noise_variance = noise_variance(1:skip:end);
 
-likelihood = @likLaplace;
+train_x = [train_x (1:numel(train_x))'];
+test_x  = train_x;
+
+spectrum_mean_function = {@meanConst};
+
+spectrum_continuum_covariance_function = {@covMaterniso, 3};
+spectrum_noise_covariance_function = {@covConstMatrix, 0 * diag(noise_variance)};
+spectrum_covariance_function = ...
+    {@covSum, ...
+     {{@covMask, {1, spectrum_continuum_covariance_function}}, ...
+      {@covMask, {2, spectrum_noise_covariance_function}}}};
+
+likelihood       = @likGauss;
+inference_method = @infExact;
+
+hyperparameters.lik  = log(1 / 4); %[log(3); log(1 / 4)];
+hyperparameters.mean = median(flux);
+hyperparameters.cov  = [log(500); log(1)];
+
+learned = minimize(hyperparameters, @gp_likelihood, -70, inference_method, ...
+                   spectrum_mean_function, spectrum_covariance_function, ...
+                   likelihood, train_x, train_y);
+
+[~, ~, continuum_mean, continuum_variance, ~, continuum_negativelog_likelihood] = ...
+    gp_test(learned, inference_method, spectrum_mean_function, ...
+            spectrum_covariance_function, likelihood, train_x, train_y, ...
+            test_x);
+
+b_mean_function = {@meanScale, {@meanDrift, {@meanVoightProfile}}};
 mean_function = ...
-    {@meanSum, { ...
-        @meanConst, ...
-        {@meanScale, ...
-            {@meanDrift, fault_shape} ...
-        }
-               }
+    {@meanSum, ...
+     {f_mean_function, b_mean_function} ...
     };
-covariance_function = ...
-    {@covSum, { ...
-        {@covMaterniso, 3}, ...
-        {@covDrift, {@covMaterniso, 3}} ...
-              }
-     };
-inference_method = @infLaplace;
-b_function = {@meanScale, {@meanDrift, fault_shape}};
 
-hyperparameters.lik = nan;
-hyperparameters.mean = nan(4, 1);
-hyperparameters.cov = nan(6, 1);
+b_covariance_function = {@covDrift, {@covMaterniso, 3}};
+covariance_function = {@covSum, ...
+                       {f_covariance_function, b_covariance_function} ...
+                      };
 
-[~, inference_method, mean_function, covariance_function, likelihood] ...
-    = check_gp_arguments(hyperparameters, inference_method, ...
-                         mean_function, covariance_function, likelihood, ...
-                         data, responses);
+% hyperparameters.lik        = learned.lik;
+% hyperparameters.mean(1)    = learned.mean(1);
+% hyperparameters.cov([1 5]) = learned.cov(1);
+% hyperparameters.cov(2) = learned.cov(2);
+% hyperparameters.cov(6) = log(1 / 4);
 
-prior_mean_mean              = median(train_y);
-prior_mean_variance          = (1 / 20)^2;
-fault_scaling_mean           = 0.5;
-fault_scaling_variance       = (1 / 20)^2;
-fault_width_mean             = log(15);
-fault_width_variance         = (1 / 4)^2;
-length_scale_mean            = log(15);
-length_scale_variance        = (1 / 4)^2;
-output_scale_mean            = log(1 / 20);
-output_scale_variance        = (1 / 4)^2;
-fault_length_scale_mean      = log(15);
-fault_length_scale_variance  = (1 / 4)^2;
-fault_output_scale_mean      = log(1 / 40);
-fault_output_scale_variance  = (1 / 4)^2;
-noise_scale_mean             = log(1 / 50);
-noise_scale_variance         = (1 / 4)^2;
+% ll = @(sample) log_likelihood_helper(hyperparameters, inference_method, ...
+%         mean_function, covariance_function, likelihood, train_x, ...
+%         train_y, sample(1), sample(2), sample(3));
 
-hypersamples.prior_means = ...
-    [prior_mean_mean, ...
-     fault_scaling_mean, ...
-     fault_width_mean, ...
-     length_scale_mean, ...
-     output_scale_mean, ...
-     fault_length_scale_mean, ...
-     fault_output_scale_mean, ...
-     noise_scale_mean];
+% start_times = linspace(wavelengths(floor(end / 10)), wavelengths(floor(end / 2)), 50);
+% widths = log(linspace(300, 1200, 10));
+% depths = linspace(1, 5, 10);
 
-hypersamples.prior_variances = ...
-    [prior_mean_variance, ...
-     fault_scaling_variance, ...
-     fault_width_variance, ...
-     length_scale_variance, ...
-     output_scale_variance, ...
-     fault_length_scale_variance, ...
-     fault_output_scale_variance, ...
-     noise_scale_variance];
+% log_likelihoods = [];
+% samples = [];
 
-ccd_hypersamples = ...
-    find_ccd_points(hypersamples.prior_means, ...
-                    hypersamples.prior_variances);
+% best = -no_dla_log_likelihood;
 
-num_hypersamples = size(ccd_hypersamples, 1);
+% for start_time = start_times
+%   for width = widths
+%     for depth = depths
+%       sample =  [depth start_time width];
+%       samples = [samples; sample];
 
-hypersamples.mean_ind = 1:4;
-hypersamples.likelihood_ind = 9;
-hypersamples.covariance_ind = [5:6 3:4 7:8];
-hypersamples.marginal_ind = [1:2 4:9];
+%       log_likelihood = ll(sample);
+%       log_likelihoods = [log_likelihoods; log_likelihood];
 
-fault_start_times = wavelengths;
-num_start_times = numel(fault_start_times);
-
-all_latent_means = zeros(num_hypersamples, num_points, num_start_times);
-all_latent_variances = zeros(num_hypersamples, num_points, num_start_times);
-all_log_likelihoods = zeros(num_hypersamples, num_start_times);
-
-for i = 1:num_start_times
-  hypersamples.values = ...
-      [ccd_hypersamples(:, 1:2) ...
-       fault_start_times(i) * ones(num_hypersamples, 1) ...
-       ccd_hypersamples(:, 3:end)];
-
-  [latent_means, latent_variances, hypersample_weights, log_likelihoods] = ...
-      estimate_latent_posterior(train_x, train_y, test_x, inference_method, ...
-                                mean_function, covariance_function, ...
-                                likelihood, hypersamples);
-
-  for j = 1:num_hypersamples
-    latent_means(j, :) = latent_means(j, :) - ...
-        feval(b_function{:}, hypersamples.values(j, 2:4), ...
-              test_x)';
-  end
-
-  all_latent_means(:, :, i)     = latent_means;
-  all_latent_variances(:, :, i) = latent_variances;
-  all_log_likelihoods(:, i)     = log_likelihoods;
-
-  fprintf('time %4.2f: likelihood: %4.2f\n', fault_start_times(i), ...
-          max(log_likelihoods));
-end
+%       if (log_likelihood > best)
+%         best = log_likelihood;
+%         [start_time exp(width) depth log_likelihood]
+%       end
+%     end
+%   end
+% end
